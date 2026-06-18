@@ -6,10 +6,12 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 mod analyzer;
+mod bytecode;
 mod compiler;
 mod composer;
 mod config;
 mod instruction;
+mod runner;
 // mod model;
 mod parser;
 // mod runnable;
@@ -142,4 +144,95 @@ pub unsafe extern "C" fn info() -> *const c_char {
     // let msg = c"symjit 1.3.3";
     let msg = CString::new(env!("CARGO_PKG_VERSION")).unwrap();
     msg.into_raw() as *const _
+}
+
+/// Evaluates the compiled function. This is for Symbolica compatibility.
+///
+/// # Safety
+///     it is the responsibility of the calling function to ensure
+///     that q points to a valid CompilerResult.
+///
+#[no_mangle]
+pub unsafe extern "C" fn evaluate(
+    q: *mut CompilerResult,
+    args: *const f64,
+    nargs: usize,
+    outs: *mut f64,
+    nouts: usize,
+) -> bool {
+    let q: &mut CompilerResult = unsafe { &mut *q };
+
+    if let Some(app) = &mut q.app {
+        let args: &[f64] = unsafe { std::slice::from_raw_parts(args, nargs) };
+        let outs: &mut [f64] = unsafe { std::slice::from_raw_parts_mut(outs, nouts) };
+        app.evaluate(args, outs);
+        true
+    } else {
+        false
+    }
+}
+
+/// Evaluates the compiled function. This is for Symbolica compatibility.
+///
+/// # Safety
+///     it is the responsibility of the calling function to ensure
+///     that q points to a valid CompilerResult.
+///
+#[no_mangle]
+pub unsafe extern "C" fn evaluate_matrix(
+    q: *mut CompilerResult,
+    args: *const f64,
+    nargs: usize,
+    outs: *mut f64,
+    nouts: usize,
+) -> bool {
+    let q: &mut CompilerResult = unsafe { &mut *q };
+
+    if let Some(app) = &mut q.app {
+        let count_params = app.count_params();
+
+        if count_params == 0 {
+            return false;
+        }
+
+        let args: &[f64] = unsafe { std::slice::from_raw_parts(args, nargs) };
+        let outs: &mut [f64] = unsafe { std::slice::from_raw_parts_mut(outs, nouts) };
+        let n = nargs / count_params;
+        app.evaluate_matrix(args, outs, n);
+        true
+    } else {
+        false
+    }
+}
+
+/// Returns the number of parameters.
+///
+/// # Safety
+///     it is the responsibility of the calling function to ensure
+///     that q points to a valid CompilerResult.
+///
+#[no_mangle]
+pub unsafe extern "C" fn count_params(q: *const CompilerResult) -> usize {
+    let q: &CompilerResult = unsafe { &*q };
+    if let Some(app) = &q.app {
+        app.count_params()
+    } else {
+        0
+    }
+}
+
+/// Returns the number of observables (output).
+///
+/// # Safety
+///     it is the responsibility of the calling function to ensure
+///     that q points to a valid CompilerResult.
+///
+#[no_mangle]
+pub unsafe extern "C" fn count_outs(q: *const CompilerResult) -> usize {
+    let q: &CompilerResult = unsafe { &*q };
+    if let Some(app) = &q.app {
+        app.count_outs()
+    } else {
+        0
+    }
 }

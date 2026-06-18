@@ -57,6 +57,34 @@ class Engine:
         self._finalize.argtypes = [ctypes.c_void_p]
         self._finalize.restype = None
 
+        self._evaluate = self.dll.evaluate
+        self._evaluate.argtypes = [
+            ctypes.c_void_p,  # handle
+            ctypes.POINTER(ctypes.c_double),  # args
+            ctypes.c_size_t,  # nargs
+            ctypes.POINTER(ctypes.c_double),  # outs
+            ctypes.c_size_t,  # nouts
+        ]
+        self._evaluate.restype = ctypes.c_bool
+
+        self._evaluate_matrix = self.dll.evaluate_matrix
+        self._evaluate_matrix.argtypes = [
+            ctypes.c_void_p,  # handle
+            ctypes.POINTER(ctypes.c_double),  # args
+            ctypes.c_size_t,  # nargs
+            ctypes.POINTER(ctypes.c_double),  # outs
+            ctypes.c_size_t,  # nouts
+        ]
+        self._evaluate_matrix.restype = ctypes.c_bool
+
+        self._count_params = self.dll.count_params
+        self._count_params.argtypes = [ctypes.c_void_p]
+        self._count_params.restype = ctypes.c_size_t
+
+        self._count_outs = self.dll.count_outs
+        self._count_outs.argtypes = [ctypes.c_void_p]
+        self._count_outs.restype = ctypes.c_size_t
+
     def info(self):
         return self._info()
 
@@ -157,7 +185,8 @@ class RustyCompiler:
             lib._finalize(self.p)
 
     def populate(self):
-        pass
+        self.count_params = lib._count_params(self.p)
+        self.count_obs = lib._count_outs(self.p)
 
     def dump(self, name, what="scalar"):
         if not lib._dump(self.p, name.encode("utf-8"), what.encode("utf-8")):

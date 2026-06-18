@@ -92,18 +92,18 @@ impl Composer for Analyzer {
     }
 
     fn append_label(&mut self, id: usize) -> Result<()> {
-        self.count_labels = self.count_labels.max(id);
+        self.count_labels = self.count_labels.max(id + 1);
         Ok(())
     }
 
     fn append_if_else(&mut self, cond: &Slot, id: usize) -> Result<()> {
         self.process_slot(cond)?;
-        self.count_labels = self.count_labels.max(id);
+        self.count_labels = self.count_labels.max(id + 1);
         Ok(())
     }
 
     fn append_goto(&mut self, id: usize) -> Result<()> {
-        self.count_labels = self.count_labels.max(id);
+        self.count_labels = self.count_labels.max(id + 1);
         Ok(())
     }
 

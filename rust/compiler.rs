@@ -25,6 +25,7 @@ impl Translator {
         assert!(analyzer.count_temps == model.1);
         // translator.set_num_params(num_params);
         let app = self.compile(&model, analyzer)?;
+        println!("{:?}", &app);
         Ok(app)
     }
 
@@ -43,6 +44,7 @@ impl Translator {
         }
 
         self.convert(model, &mut app)?;
+        app.seal();
 
         Ok(app)
     }
