@@ -1,28 +1,24 @@
 #![allow(uncommon_codepoints)]
 
-use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::Debug;
 use std::str::FromStr;
 
 mod analyzer;
+mod application;
 mod bytecode;
 mod compiler;
 mod composer;
 mod config;
 mod instruction;
-mod runner;
-// mod model;
 mod parser;
-// mod runnable;
-mod application;
-mod types;
+mod runner;
 
 // use model::{CellModel, Program};
 
 use application::Application;
 use compiler::Translator;
-use config::{CompilerType, Config};
+use config::Config;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CompilerStatus {
@@ -80,7 +76,7 @@ pub unsafe extern "C" fn translate(
         }
     };
 
-    if let Ok(mut config) = Config::from_name(ty, opt) {
+    if let Ok(config) = Config::from_name(ty, opt) {
         let mut comp = Translator::new(config);
         let app = comp.translate(json.to_string(), num_params);
 

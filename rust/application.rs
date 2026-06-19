@@ -5,19 +5,9 @@ use crate::analyzer::Analyzer;
 use crate::composer::Composer;
 use crate::config::Config;
 use crate::instruction::{BuiltinSymbol, Slot};
-use crate::runner::{GenericRealRunner, Runner};
+use crate::runner::{GenericComplexRunner, GenericRealRunner, Runner};
 
 use crate::bytecode::*;
-
-pub fn bool_to_f64(b: bool) -> f64 {
-    const T: f64 = f64::from_bits(!0);
-    const F: f64 = f64::from_bits(0);
-    if b {
-        T
-    } else {
-        F
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Label {
@@ -40,36 +30,47 @@ impl Default for Label {
 pub struct Application {
     pub config: Config,
     pub analyzer: Analyzer,
-    pub mem: Vec<f64>,
     pub code: Vec<u8>,
     pub words: Vec<u32>,
-    pub next_const: usize,
     pub labels: Vec<Label>,
+    pub consts: Vec<Complex<f64>>,
+    pub runner: Option<Box<dyn Runner>>,
 }
 
 impl Application {
     pub fn new(config: Config, analyzer: Analyzer) -> Application {
-        let mem_size = analyzer.count_consts
-            + analyzer.count_params
-            + analyzer.count_outs
-            + analyzer.count_temps;
-
         let count_labels = analyzer.count_labels;
 
         Application {
             config,
             analyzer,
-            mem: vec![0.0; mem_size],
             code: Vec::new(),
             words: Vec::new(),
-            next_const: 0,
             labels: vec![Label::default(); count_labels],
+            consts: Vec::new(),
+            runner: None,
         }
     }
 
     pub fn seal(&mut self) {
         self.link();
         self.append_code(RET);
+
+        println!("bytecode length: {}", self.code.len());
+        println!("words    length: {}", self.words.len());
+        println!("number of temps: {}", self.analyzer.count_temps);
+
+        let mut runner: Box<dyn Runner> = if self.config.is_complex() {
+            Box::new(GenericComplexRunner::new(&self))
+        } else {
+            Box::new(GenericRealRunner::new(&self))
+        };
+
+        for z in self.consts.iter() {
+            runner.add_constant(*z);
+        }
+
+        self.runner = Some(runner);
     }
 
     fn link(&mut self) {
@@ -82,11 +83,13 @@ impl Application {
     }
 
     pub fn count_params(&self) -> usize {
-        self.analyzer.count_params
+        let k = if self.config.is_complex() { 2 } else { 1 };
+        self.analyzer.count_params * k
     }
 
     pub fn count_outs(&self) -> usize {
-        self.analyzer.count_outs
+        let k = if self.config.is_complex() { 2 } else { 1 };
+        self.analyzer.count_outs * k
     }
 
     fn append_code(&mut self, cmd: u8) {
@@ -118,135 +121,22 @@ impl Application {
         }
     }
 
-    fn exec(&mut self) {
-        let mut ip: usize = 0;
-        let mut pos: usize = 0;
-        let mut x: f64 = 0.0;
-        let mut y: f64 = 0.0;
-        let mut z: f64 = 0.0;
-
-        loop {
-            let cmd = self.code[ip];
-            // println!("{}, ip = {}, pos = {}", cmd, ip, pos);
-            ip += 1;
-
-            if cmd & LDX != 0 {
-                x = self.mem[self.words[pos] as usize];
-                pos += 1;
-            }
-
-            if cmd & BINOP != 0 {
-                if cmd & LDY != 0 {
-                    y = self.mem[self.words[pos] as usize];
-                    pos += 1;
-                }
-
-                match cmd & (0x0f | BINOP) {
-                    MUL => x *= y,
-                    ADD => x += y,
-                    SUB => x -= y,
-                    DIV => x /= y,
-                    POWF => x = x.powf(y),
-                    AND => x = f64::from_bits(x.to_bits() & y.to_bits()),
-                    OR => x = f64::from_bits(x.to_bits() | y.to_bits()),
-                    XOR => x = f64::from_bits(x.to_bits() ^ y.to_bits()),
-                    COMPLEX => {}
-                    MOVZ => z = x,
-                    _ => panic!("unrecognized binary op-code: {}", cmd),
-                }
-            } else {
-                match cmd & 0x1f {
-                    ASSIGN => {}
-                    NEG => x = -x,
-                    NOT => x = f64::from_bits(!x.to_bits()),
-                    RECIP => x = 1.0 / x,
-                    ABS => x = x.abs(),
-                    ROOT | ROOT_REAL => x = x.sqrt(),
-                    POW => {
-                        let p = self.words[pos] as i32;
-                        pos += 1;
-                        x = x.powi(p);
-                    }
-                    ROUND => x = x.round(),
-                    FLOOR => x = x.floor(),
-                    REAL => {}
-                    IMAGINARY => x = 0.0,
-                    CONJUGATE => {}
-                    ISZERO => x = bool_to_f64(x == 0.0),
-                    GOTO => {
-                        ip = self.words[pos] as usize;
-                        pos = self.words[pos + 1] as usize;
-                    }
-                    BRANCH_IF => {
-                        if x != 0.0 {
-                            ip = self.words[pos] as usize;
-                            pos = self.words[pos + 1] as usize;
-                        } else {
-                            pos += 2;
-                        }
-                    }
-                    BRANCH_ELSE => {
-                        if x == 0.0 {
-                            ip = self.words[pos] as usize;
-                            pos = self.words[pos + 1] as usize;
-                        } else {
-                            pos += 2;
-                        }
-                    }
-                    JOIN => x = if x != 0.0 { z } else { y },
-                    GT => x = bool_to_f64(x > y),
-                    GEQ => x = bool_to_f64(x >= y),
-                    LT => x = bool_to_f64(x < y),
-                    LEQ => x = bool_to_f64(x <= y),
-                    EQ => x = bool_to_f64(x == y),
-                    NEQ => x = bool_to_f64(x != y),
-                    DUP => y = x,
-                    RET => break,
-                    _ => panic!("unrecognized unary op-code: {}", cmd),
-                }
-            }
-
-            if cmd & STX != 0 {
-                self.mem[self.words[pos] as usize] = x;
-                pos += 1;
-            }
+    pub fn evaluate(&mut self, args: &[f64], outs: &mut [f64]) {
+        if let Some(runner) = &mut self.runner {
+            runner.evaluate(args, outs);
         }
     }
 
-    pub fn evaluate(&mut self, args: &[f64], outs: &mut [f64]) {
-        let first_param = self.analyzer.count_consts;
-        let count_params = self.analyzer.count_params;
-        self.mem[first_param..first_param + count_params].copy_from_slice(args);
-
-        self.exec();
-
-        let first_out = self.analyzer.count_consts + self.analyzer.count_params;
-        let count_outs = self.analyzer.count_outs;
-        outs.copy_from_slice(&self.mem[first_out..first_out + count_outs]);
-    }
-
     pub fn evaluate_matrix(&mut self, args: &[f64], outs: &mut [f64], n: usize) {
-        let first_param = self.analyzer.count_consts;
-        let first_out = self.analyzer.count_consts + self.analyzer.count_params;
-        let count_params = self.analyzer.count_params;
-        let count_outs = self.analyzer.count_outs;
-
-        for i in 0..n {
-            self.mem[first_param..first_param + count_params]
-                .copy_from_slice(&args[i * count_params..(i + 1) * count_params]);
-
-            self.exec();
-
-            outs[i * count_outs..(i + 1) * count_outs]
-                .copy_from_slice(&self.mem[first_out..first_out + count_outs]);
+        if let Some(runner) = &mut self.runner {
+            runner.evaluate_matrix(args, outs, n);
         }
     }
 }
 
 impl Composer for Application {
     fn append_constant(&mut self, z: Complex<f64>) -> Result<usize> {
-        self.mem[self.next_const] = z.re;
-        self.next_const += 1;
+        self.consts.push(z);
         Ok(0)
     }
 
@@ -372,11 +262,12 @@ impl Composer for Application {
             self.append_code(MUL | STX);
         } else {
             let cmd = match fun {
+                "abs" => ABS,
                 "neg" => NEG,
                 "recip" => RECIP,
                 "not" => NOT,
-                "root" => ROOT,
-                "root_real" => ROOT_REAL,
+                "root" | "sqrt" => ROOT,
+                "root_real" | "sqrt_real" => ROOT_REAL,
                 "round" => ROUND,
                 "floor" => FLOOR,
                 "real" => REAL,

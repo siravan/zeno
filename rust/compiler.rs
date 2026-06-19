@@ -20,12 +20,9 @@ impl Translator {
     pub fn translate(&mut self, instructions: String, num_params: usize) -> Result<Application> {
         let model: SymbolicaModel = Parser::new(instructions).parse()?;
         let analyzer = self.anazlyze(&model)?;
-        println!("{:?}", &analyzer);
-        assert!(analyzer.count_consts == model.2.len());
-        assert!(analyzer.count_temps == model.1);
+        // println!("{:?}", &analyzer);
         // translator.set_num_params(num_params);
         let app = self.compile(&model, analyzer)?;
-        println!("{:?}", &app);
         Ok(app)
     }
 
