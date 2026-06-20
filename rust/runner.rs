@@ -73,6 +73,7 @@ pub struct GenericRealRunner {
     count_consts: usize,
     count_params: usize,
     count_outs: usize,
+    ker: fn(code: &[u8], words: &[u32], mem: &mut [f64]),
 }
 
 impl GenericRealRunner {
@@ -88,102 +89,117 @@ impl GenericRealRunner {
             count_consts: a.count_consts,
             count_params: a.count_params,
             count_outs: a.count_outs,
+            //ker: kernel,
+            ker: stub_x64_scalar,
         }
     }
+}
 
-    fn exec(&mut self) {
-        let mut ip: usize = 0;
-        let mut pos: usize = 0;
-        let mut x: f64 = 0.0;
-        let mut y: f64 = 0.0;
-        let mut z: f64 = 0.0;
+fn kernel(code: &[u8], words: &[u32], mem: &mut [f64]) {
+    let mut ip: usize = 0;
+    let mut pos: usize = 0;
+    let mut x: f64 = 0.0;
+    let mut y: f64 = 0.0;
+    let mut z: f64 = 0.0;
 
-        loop {
-            let cmd = self.code[ip];
-            // println!("{}, ip = {}, pos = {}", cmd, ip, pos);
-            ip += 1;
+    loop {
+        let cmd = code[ip];
+        // println!("{}, ip = {}, pos = {}", cmd, ip, pos);
+        ip += 1;
 
-            if cmd & LDX != 0 {
-                x = self.mem[self.words[pos] as usize];
+        if cmd & LDX != 0 {
+            x = mem[words[pos] as usize];
+            pos += 1;
+        }
+
+        if cmd & BINOP != 0 {
+            if cmd & LDY != 0 {
+                y = mem[words[pos] as usize];
                 pos += 1;
             }
 
-            if cmd & BINOP != 0 {
-                if cmd & LDY != 0 {
-                    y = self.mem[self.words[pos] as usize];
+            match cmd & (0x0f | BINOP) {
+                MUL => x *= y,
+                ADD => x += y,
+                SUB => x -= y,
+                DIV => x /= y,
+                POWF => x = x.powf(y),
+                AND => x = f64::from_bits(x.to_bits() & y.to_bits()),
+                OR => x = f64::from_bits(x.to_bits() | y.to_bits()),
+                XOR => x = f64::from_bits(x.to_bits() ^ y.to_bits()),
+                COMPLEX => {}
+                MOVZ => z = x,
+                _ => panic!("unrecognized binary op-code: {}", cmd),
+            }
+        } else {
+            match cmd & 0x1f {
+                ASSIGN => {}
+                NEG => x = -x,
+                NOT => x = f64::from_bits(!x.to_bits()),
+                RECIP => x = 1.0 / x,
+                ABS => x = x.abs(),
+                ROOT | ROOT_REAL => x = x.sqrt(),
+                POW => {
+                    let p = words[pos] as i32;
                     pos += 1;
+                    x = x.powi(p);
                 }
-
-                match cmd & (0x0f | BINOP) {
-                    MUL => x *= y,
-                    ADD => x += y,
-                    SUB => x -= y,
-                    DIV => x /= y,
-                    POWF => x = x.powf(y),
-                    AND => x = f64::from_bits(x.to_bits() & y.to_bits()),
-                    OR => x = f64::from_bits(x.to_bits() | y.to_bits()),
-                    XOR => x = f64::from_bits(x.to_bits() ^ y.to_bits()),
-                    COMPLEX => {}
-                    MOVZ => z = x,
-                    _ => panic!("unrecognized binary op-code: {}", cmd),
+                ROUND => x = x.round(),
+                FLOOR => x = x.floor(),
+                REAL => {}
+                IMAGINARY => x = 0.0,
+                CONJUGATE => {}
+                ISZERO => x = bool_to_f64(x == 0.0),
+                GOTO => {
+                    ip = words[pos] as usize;
+                    pos = words[pos + 1] as usize;
                 }
-            } else {
-                match cmd & 0x1f {
-                    ASSIGN => {}
-                    NEG => x = -x,
-                    NOT => x = f64::from_bits(!x.to_bits()),
-                    RECIP => x = 1.0 / x,
-                    ABS => x = x.abs(),
-                    ROOT | ROOT_REAL => x = x.sqrt(),
-                    POW => {
-                        let p = self.words[pos] as i32;
-                        pos += 1;
-                        x = x.powi(p);
+                BRANCH_IF => {
+                    if x != 0.0 {
+                        ip = words[pos] as usize;
+                        pos = words[pos + 1] as usize;
+                    } else {
+                        pos += 2;
                     }
-                    ROUND => x = x.round(),
-                    FLOOR => x = x.floor(),
-                    REAL => {}
-                    IMAGINARY => x = 0.0,
-                    CONJUGATE => {}
-                    ISZERO => x = bool_to_f64(x == 0.0),
-                    GOTO => {
-                        ip = self.words[pos] as usize;
-                        pos = self.words[pos + 1] as usize;
-                    }
-                    BRANCH_IF => {
-                        if x != 0.0 {
-                            ip = self.words[pos] as usize;
-                            pos = self.words[pos + 1] as usize;
-                        } else {
-                            pos += 2;
-                        }
-                    }
-                    BRANCH_ELSE => {
-                        if x == 0.0 {
-                            ip = self.words[pos] as usize;
-                            pos = self.words[pos + 1] as usize;
-                        } else {
-                            pos += 2;
-                        }
-                    }
-                    JOIN => x = if x != 0.0 { z } else { y },
-                    GT => x = bool_to_f64(x > y),
-                    GEQ => x = bool_to_f64(x >= y),
-                    LT => x = bool_to_f64(x < y),
-                    LEQ => x = bool_to_f64(x <= y),
-                    EQ => x = bool_to_f64(x == y),
-                    NEQ => x = bool_to_f64(x != y),
-                    DUP => y = x,
-                    RET => break,
-                    _ => panic!("unrecognized unary op-code: {}", cmd),
                 }
-            }
-
-            if cmd & STX != 0 {
-                self.mem[self.words[pos] as usize] = x;
-                pos += 1;
+                BRANCH_ELSE => {
+                    if x == 0.0 {
+                        ip = words[pos] as usize;
+                        pos = words[pos + 1] as usize;
+                    } else {
+                        pos += 2;
+                    }
+                }
+                JOIN => x = if x != 0.0 { z } else { y },
+                GT => x = bool_to_f64(x > y),
+                GEQ => x = bool_to_f64(x >= y),
+                LT => x = bool_to_f64(x < y),
+                LEQ => x = bool_to_f64(x <= y),
+                EQ => x = bool_to_f64(x == y),
+                NEQ => x = bool_to_f64(x != y),
+                DUP => y = x,
+                RET => break,
+                _ => panic!("unrecognized unary op-code: {}", cmd),
             }
         }
+
+        if cmd & STX != 0 {
+            mem[words[pos] as usize] = x;
+            pos += 1;
+        }
+    }
+}
+
+extern "C" {
+    fn ker_x64_scalar(code: *const u8, words: *const u32, mem: *mut f64);
+}
+
+fn stub_x64_scalar(code: &[u8], words: &[u32], mem: &mut [f64]) {
+    unsafe {
+        let code: *const u8 = code.as_ptr();
+        let words: *const u32 = words.as_ptr();
+        let mem: *mut f64 = mem.as_mut_ptr();
+        ker_x64_scalar(code, words, mem);
     }
 }
 
@@ -193,7 +209,7 @@ impl Runner for GenericRealRunner {
         let count_params = self.count_params;
         self.mem[first_param..first_param + count_params].copy_from_slice(args);
 
-        self.exec();
+        (self.ker)(&self.code, &self.words, &mut self.mem);
 
         let first_out = self.count_consts + self.count_params;
         let count_outs = self.count_outs;
@@ -210,7 +226,7 @@ impl Runner for GenericRealRunner {
             self.mem[first_param..first_param + count_params]
                 .copy_from_slice(&args[i * count_params..(i + 1) * count_params]);
 
-            self.exec();
+            (self.ker)(&self.code, &self.words, &mut self.mem);
 
             outs[i * count_outs..(i + 1) * count_outs]
                 .copy_from_slice(&self.mem[first_out..first_out + count_outs]);
