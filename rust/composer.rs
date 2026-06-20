@@ -1,8 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use num_complex::Complex;
-use std::collections::HashSet;
 
-use crate::config::{Config, SLICE_CAP};
 use crate::instruction::{BuiltinSymbol, Slot};
 
 pub trait Composer {

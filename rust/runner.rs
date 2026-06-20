@@ -81,6 +81,12 @@ impl GenericRealRunner {
         let a = &app.analyzer;
         let mem_size = a.count_consts + a.count_params + a.count_outs + a.count_temps;
 
+        let ker = if app.config.is_bytecode() {
+            kernel
+        } else {
+            stub_x64_scalar
+        };
+
         GenericRealRunner {
             mem: vec![0.0; mem_size],
             code: app.code.clone(),
@@ -89,8 +95,7 @@ impl GenericRealRunner {
             count_consts: a.count_consts,
             count_params: a.count_params,
             count_outs: a.count_outs,
-            //ker: kernel,
-            ker: stub_x64_scalar,
+            ker,
         }
     }
 }
@@ -191,7 +196,7 @@ fn kernel(code: &[u8], words: &[u32], mem: &mut [f64]) {
 }
 
 extern "C" {
-    fn ker_x64_scalar(code: *const u8, words: *const u32, mem: *mut f64);
+    fn ker_x64_scalar(code: *const u8, words: *const u32, mem: *mut f64) -> u64;
 }
 
 fn stub_x64_scalar(code: &[u8], words: &[u32], mem: &mut [f64]) {
@@ -199,7 +204,11 @@ fn stub_x64_scalar(code: &[u8], words: &[u32], mem: &mut [f64]) {
         let code: *const u8 = code.as_ptr();
         let words: *const u32 = words.as_ptr();
         let mem: *mut f64 = mem.as_mut_ptr();
-        ker_x64_scalar(code, words, mem);
+        let ret = ker_x64_scalar(code, words, mem);
+
+        if ret != 0 {
+            panic!("asm kernel returns error: {}", ret);
+        }
     }
 }
 

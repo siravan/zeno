@@ -56,9 +56,9 @@ impl Application {
         self.link();
         self.append_code(RET);
 
-        println!("bytecode length: {}", self.code.len());
-        println!("words    length: {}", self.words.len());
-        println!("number of temps: {}", self.analyzer.count_temps);
+        // println!("bytecode length: {}", self.code.len());
+        // println!("words    length: {}", self.words.len());
+        // println!("number of temps: {}", self.analyzer.count_temps);
 
         let mut runner: Box<dyn Runner> = if self.config.is_complex() {
             Box::new(GenericComplexRunner::new(&self))

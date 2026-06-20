@@ -115,69 +115,37 @@ class RustyCompiler:
         model,
         ty="native",
         use_simd=True,
-        use_threads=True,
-        cse=True,
-        fastmath=True,
-        opt_level=1,
-        convert=True,
-        defuns=None,
-        sanitize=True,
+        use_simd512=False,
+        opt_level=2,
         dtype="float64",
-        action="compile",
-        file="",
         num_params=1,
-        order="fortran",
         simd_branch=False,
-        fast_complex=True,
-        direct=True,
-        compress=False,
-        huge=False,
-        parallel_mul=True,
     ):
-        if convert:
-            model = json.dumps(model)
-
         dtype = str(dtype)
         if dtype not in ["float64", "complex128"]:
             raise ValueError("`dtype` should be `float64` or `complex128`")
 
-        if order not in ["c", "fortran"]:
-            raise ValueError("`order` should be either `c` or `fortran`")
-
         opt = (
-            (0x01 if use_simd else 0)
-            | (0x00000002 if use_threads else 0)
-            | (0x00000004 if cse else 0)
-            | (0x00000008 if fastmath else 0)
-            | (0x00000010 if sanitize else 0)
+            (0x00000001 if use_simd else 0)
+            | (0x00000002 if use_simd512 else 0)
             | (0x00000020 if dtype == "complex128" else 0)
-            | (0x00000040 if order == "c" else 0)
             | (0x00000080 if simd_branch else 0)
-            | (0x00002000 if compress else 0)
-            | (0x00004000 if direct else 0)
-            | (0x00008000 if fast_complex else 0)
-            | (0x00100000 if huge else 0)
-            | (0x00200000 if parallel_mul else 0)
             | ((opt_level & 0x0F) << 8)
         )
 
         self.dtype = dtype
         self.ty = ty
 
-        if action == "translate":
-            self.p = lib._translate(
-                model.encode("utf-8"), ty.encode("utf8"), opt, num_params
-            )
-            self.symbolica = True
-        else:
-            raise ValueError(f"action {action} not defined")
+        self.p = lib._translate(
+            model.encode("utf-8"), ty.encode("utf8"), opt, num_params
+        )
+        self.symbolica = True
 
         status = lib._check_status(self.p)
         if status != b"Success":
             raise ValueError(status.decode())
 
         self.model = model
-        self.json_model = None
         self.populate()
 
     def __del__(self):
@@ -187,39 +155,6 @@ class RustyCompiler:
     def populate(self):
         self.count_params = lib._count_params(self.p)
         self.count_obs = lib._count_outs(self.p)
-
-    def dump(self, name, what="scalar"):
-        if not lib._dump(self.p, name.encode("utf-8"), what.encode("utf-8")):
-            raise ValueError("cannot dump the requested code")
-        with open(name, "rb") as fd:
-            buf = fd.read()
-            return buf
-
-    def dumps(self, what="scalar"):
-        name = "symjit_dump.bin"
-        self.dump(name, what=what)
-        with open(name, "rb") as fd:
-            b = fd.read()
-        os.remove(name)
-
-        if b[0] == ord("#") and b[1] == ord("!"):
-            return b.decode("utf8")
-        else:
-            return b.hex()
-
-    def execute(self):
-        if not lib._execute(self.p):
-            raise ValueError("cannot execute the model")
-
-    def execute_vectorized(self, buf):
-        ptr = buf.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-        n = buf.shape[1]
-        if not lib._execute_vectorized(self.p, ptr, n):
-            raise ValueError("cannot execute the model")
-
-    def execute_matrix(self, states, obs):
-        if not lib._execute_matrix(self.p, states.p, obs.p):
-            raise ValueError("cannot execute the model")
 
     def evaluate(self, args, outs):
         pargs = args.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -238,50 +173,3 @@ class RustyCompiler:
 
         if not lib._evaluate_matrix(self.p, pargs, nargs * k, pouts, nouts * k):
             raise ValueError("cannot evaluate the model")
-
-    def fast_func(self):
-        if self.ty == "bytecode":
-            return None
-
-        f = lib._fast_func(self.p)
-
-        if f is None:
-            return None
-
-        sig = [ctypes.c_double for _ in range(self.count_states + 1)]
-        fac = ctypes.CFUNCTYPE(*sig)
-        return fac(f)
-
-    def callable_quad(self, use_fast=True):
-        f = lib._fast_func(self.p)
-
-        try:
-            from scipy import LowLevelCallable
-
-            if f is not None and use_fast:
-                return LowLevelCallable(
-                    lib._callable_quad_fast,
-                    user_data=ctypes.c_void_p(f),
-                    signature="double (int, double *, void *)",
-                )
-            else:
-                return LowLevelCallable(
-                    lib._callable_quad,
-                    user_data=ctypes.c_void_p(self.p),
-                    signature="double (int, double *, void *)",
-                )
-        except:
-            return None
-
-    def callable_filter(self, use_fast=True):
-        try:
-            from scipy import LowLevelCallable
-
-            return LowLevelCallable(
-                lib._callable_filter,
-                user_data=ctypes.c_void_p(self.p),
-                signature="int (double *, npy_intp, double *, void *)",
-            )
-
-        except:
-            return None
