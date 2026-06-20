@@ -245,7 +245,7 @@ ker_x64_scalar:
 .U29:
     jmp .Error
 .U30:   /* DUP */
-    vmodapd xmm1, xmm0
+    vmovapd xmm1, xmm0
     jmp .Next
 .U31:
     xor rax, rax    # return OK
