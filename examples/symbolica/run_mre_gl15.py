@@ -12,7 +12,7 @@ with open(INSTRUCTIONS, "rt", encoding="utf-8") as fd:
 
 print("Building symjit evaluator...")
 t_start = time.time()
-symjit_f = compile_evaluator(evaluator, dtype="complex128", ty=CONFIG)
+symjit_f = compile_evaluator(evaluator, dtype="complex128", ty="native", use_simd=True)
 print(f"completed in {time.time() - t_start:.1f} s.")
 
 n = symjit_f.complex_compiler.count_params // 2

@@ -6,7 +6,7 @@
 	.equ LDY, 0x10
 
     .text
-	.global ker_x64_scalar
+	.global ker_scalar
 
 .macro LOAD reg
     mov eax, [rsi + 4 * r9]
@@ -14,7 +14,7 @@
     vmovsd \reg, [rdx + 8 * rax]
 .endm
 
-ker_x64_scalar:
+ker_scalar:
     ; code = rdi
     ; words = rsi
     ; mem = rdx

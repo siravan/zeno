@@ -15,7 +15,7 @@ def can_use_rust():
 
 def compile_evaluator(
     evaluator,
-    ty="bytecode",
+    ty="native",
     use_simd=True,
     use_simd512=False,
     opt_level=2,

@@ -179,10 +179,23 @@ impl Composer for Application {
     }
 
     fn append_pow(&mut self, lhs: &Slot, arg: &Slot, p: i64, is_real: bool) -> Result<()> {
-        self.append_code(POW | LDX | STX);
-        self.append_slot(arg);
-        self.append_word(p as i32 as u32);
-        self.append_slot(lhs);
+        if p == 2 {
+            self.append_code(DUP | LDX);
+            self.append_code(MUL | STX);
+            self.append_slot(arg);
+            self.append_slot(lhs);
+        } else if p == 3 {
+            self.append_code(DUP | LDX);
+            self.append_code(MUL);
+            self.append_code(MUL | STX);
+            self.append_slot(arg);
+            self.append_slot(lhs);
+        } else {
+            self.append_code(POW | LDX | STX);
+            self.append_slot(arg);
+            self.append_word(p as i32 as u32);
+            self.append_slot(lhs);
+        }
         Ok(())
     }
 
